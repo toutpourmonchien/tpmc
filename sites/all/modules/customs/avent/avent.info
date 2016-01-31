@@ -1,0 +1,4 @@
+name = Avent
+description = Module pour le calendrier de l'avent
+core = 7.x
+version = 7.x-1.0

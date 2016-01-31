@@ -1,0 +1,71 @@
+.avent {
+  padding: 10px 75px;
+  background: url(/sites/all/modules/customs/avent/images/BGchristmas4.jpg) #9b0417;
+  background-size: 100%;
+  color: white;
+}
+.avent h1 {
+  font-size: 50px;
+}
+.avent .papanoel {
+  float: left;
+}
+ul.noel {
+  overflow: hidden;
+  clear: both;
+}
+.case {
+  border: 1px dotted black;
+  min-height: 120px;
+}
+.box {
+  list-style: none;
+  width: 125px;
+  height: 125px;
+  margin: 10px;
+  float: left;
+  overflow: hidden;
+  border: 1px solid white;
+  position: relative;
+  -webkit-box-shadow: 5px 5px 5px 0 rgba(0, 0, 0, 0.5);
+  box-shadow: 5px 5px 5px 0 rgba(0, 0, 0, 0.5);
+}
+.boxnoel {
+  width: 95%;
+}
+.jour {
+  position: absolute;
+  left: 5px;
+  top: 0px;
+  color: white;
+  font-size: 22px;
+  z-index: 1;
+  background: transparent;
+}
+img.past {
+  z-index: 0;
+  position: absolute;
+}
+.opened {
+  border-left: 1px solid rgba(255, 255, 255, 0.5);
+  border-top: 1px solid rgba(255, 255, 255, 0.5);
+  border-right: 1px solid rgba(0, 0, 0, 0.5);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.5);
+}
+.forbid {
+  border-left: 1px solid rgba(255, 255, 255, 0.5);
+  border-top: 1px solid rgba(255, 255, 255, 0.5);
+  border-right: 1px solid rgba(0, 0, 0, 0.5);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.5);
+  opacity: 0.5;
+}
+.today {
+  background: url(/sites/all/modules/customs/avent/images/case_today.jpg);
+  transition: background 1.5s ease;
+  display: block;
+  height: 125px;
+  width: 125px;
+}
+.today:hover {
+  background: url(/sites/all/modules/customs/avent/images/case_today_hover.jpg);
+}

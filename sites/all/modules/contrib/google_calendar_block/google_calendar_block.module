@@ -1,0 +1,538 @@
+<?php
+
+/**
+ * @file
+ * A module to provide simple Google Calendar blocks using the Google Data APIs.
+ */
+
+/**
+ * Implements hook_flush_caches().
+ */
+function google_calendar_block_flush_caches() {
+  return array('cache_google_calendar_block');
+}
+
+/**
+ * Implements hook_libraries_info().
+ */
+function google_calendar_block_libraries_info() {
+  $libraries['zf1'] = array(
+    'name' => 'ZF1',
+    'vendor url' => 'https://github.com/zendframework/zf1',
+    'download url' => 'https://github.com/zendframework/zf1/archive/master.zip',
+    'version arguments' => array(
+      'file' => 'README.md',
+      // Welcome to the Zend Framework 1.12 Release!
+      'pattern' => '/Zend Framework (\d+\.+\d+\d+)/',
+      'lines' => 3,
+    ),
+    'files' => array(
+      'php' => array(
+        'library/Zend/Loader.php',
+      ),
+    ),
+  );
+
+  return $libraries;
+}
+
+/**
+ * Implements hook_theme().
+ */
+function google_calendar_block_theme($existing, $type, $theme, $path) {
+  return array(
+    'google_calendar_block_event' => array(
+      'variables' => array(
+        'title' => NULL,
+        'author' => NULL,
+        'summary' => NULL,
+        'content' => NULL,
+        'start' => NULL,
+        'end' => NULL,
+        'where' => NULL,
+      ),
+      'template' => 'google-calendar-block-event',
+    ),
+  );
+}
+
+/**
+ * Implements hook_help().
+ */
+function google_calendar_block_help($path, $arg) {
+  switch ($path) {
+    case 'admin/structure/block/add-google-calendar-block':
+      return '<p>' . t('Use this page to create a new custom Google Calendar block.') . '</p>';
+  }
+}
+
+/**
+ * Implements hook_menu().
+ */
+function google_calendar_block_menu() {
+  // Create an array of block settings.
+  $settings = array(
+    'title' => 'Add Google Calendar block',
+    'description' => 'Add a new Google Calendar block.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('google_calendar_block_add_block_form'),
+    'type' => MENU_LOCAL_ACTION,
+    'file' => 'google_calendar_block.admin.inc',
+  );
+
+  // Add a local action to the block configuration page.
+  $items['admin/structure/block/add-google-calendar-block'] = array(
+    'access arguments' => array('administer blocks'),
+  ) + $settings;
+
+  // Get the default site theme.
+  $default_theme = variable_get('theme_default', 'bartik');
+
+  // Add a local action to the per-theme block configuration pages.
+  foreach (list_themes() as $key => $theme) {
+    if ($key != $default_theme) {
+      $items['admin/structure/block/list/' . $key . '/add-google-calendar-block'] = array(
+        'access callback' => '_google_calendar_block_themes_access',
+        'access arguments' => array($theme),
+      ) + $settings;
+    }
+  }
+
+  $items['admin/structure/block/administer/google_calendar_block/%/delete'] = array(
+    'title' => 'Delete Google Calendar block',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('google_calendar_block_delete', 5),
+    'access arguments' => array('administer blocks'),
+    'type' => MENU_CALLBACK,
+    'file' => 'google_calendar_block.admin.inc',
+  );
+  return $items;
+}
+
+/**
+ * Menu item access callback - only admin or enabled themes can be accessed.
+ */
+function _google_calendar_block_themes_access($theme) {
+  return user_access('administer blocks') && drupal_theme_access($theme);
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter();
+ */
+function google_calendar_block_form_block_admin_display_form_alter(&$form, &$form_state, $form_id) {
+  $result = db_query('SELECT bid FROM {google_calendar_block}');
+
+  // Add delete links to Google Calendar Block blocks.
+  foreach ($result as $block) {
+    $form['blocks']['google_calendar_block_' . $block->bid]['delete'] = array(
+      '#type' => 'link',
+      '#title' => t('delete'),
+      '#href' => 'admin/structure/block/administer/google_calendar_block/' . $block->bid . '/delete',
+    );
+  }
+}
+
+/**
+ * Returns information from database about a user-created (Google Calendar) block.
+ *
+ * @param $bid
+ *   ID of the block to get information for.
+ *
+ * @return
+ *   Associative array of information stored in the database for this block.
+ *   Array keys:
+ *   - bid: Block ID.
+ *   - info: Block description.
+ *   - calendar_user: The username (in e-mail address form) of the calendar.
+ *   - calendar_visibility: The private visibility feed along with the magic cookie value.
+ *   - calendar_order_by: The order of the calendar events.
+ *   - calendar_sort_order: How the order of the calendar events is sorted.
+ *   - calendar_future_events: Whether the calendar displays future events.
+ *   - calendar_max_results: How many events are displayed.
+ *   - calendar_limit_date_range: Determines whether or not calendar events should be limited to a certain date range.
+ *   - calendar_start_min: Determines the earliest event to list. Inclusive.
+ *   - calendar_start_max: Determines the latest event to list. Exclusive.
+ */
+function google_calendar_block_block_get($bid) {
+  return db_query("SELECT * FROM {google_calendar_block} WHERE bid = :bid", array(':bid' => $bid))->fetchAssoc();
+}
+
+/**
+ * Implements hook_block_info().
+ */
+function google_calendar_block_block_info() {
+  $blocks = array();
+
+  $result = db_query('SELECT bid, info FROM {google_calendar_block} ORDER BY info');
+  foreach ($result as $block) {
+    $blocks[$block->bid]['info'] = $block->info;
+  }
+  return $blocks;
+}
+
+/**
+ * Implements hook_block_configure().
+ */
+function google_calendar_block_block_configure($delta = 0) {
+  if ($delta) {
+    $config = google_calendar_block_block_get($delta);
+
+    // Unserialize the calendar settings.
+    $data = unserialize($config['data']);
+
+    // Remove the serialized calendar settings.
+    unset($config['data']);
+
+    // Add the calendar settings to the block settings.
+    $google_calendar_block = $config + $data;
+  }
+  else {
+    $google_calendar_block = array();
+  }
+  return google_calendar_block_custom_block_form($google_calendar_block);
+}
+
+/**
+ * Form constructor for the Google Calendar block form.
+ *
+ * @param $edit
+ *   (optional) An associative array of information retrieved by
+ *   google_calendar_block_block_get() if an existing block is being edited, or
+ *   an empty array otherwise. Defaults to array().
+ *
+ * @ingroup forms
+ */
+function google_calendar_block_custom_block_form($edit = array()) {
+  $edit += array(
+    'info' => '',
+    'calendar_user' => '',
+    'calendar_visibility' => '',
+    'calendar_order_by' => 'starttime',
+    'calendar_sort_order' => 'ascending',
+    'calendar_future_events' => TRUE,
+    'calendar_max_results' => '',
+    'calendar_limit_date_range' => FALSE,
+    'calendar_start_min' => array(
+      'year' => format_date(REQUEST_TIME, 'custom', 'Y'),
+      'month' => format_date(REQUEST_TIME, 'custom', 'n'),
+      'day' => format_date(REQUEST_TIME, 'custom', 'j'),
+    ),
+    'calendar_start_max' => array(
+      'year' => format_date(REQUEST_TIME, 'custom', 'Y'),
+      'month' => format_date(REQUEST_TIME, 'custom', 'n'),
+      'day' => format_date(REQUEST_TIME, 'custom', 'j'),
+    ),
+  );
+
+  $form['info'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Block description'),
+    '#default_value' => $edit['info'],
+    '#maxlength' => 64,
+    '#description' => t('A brief description of your block. Used on the <a href="@overview">Blocks administration page</a>.', array('@overview' => url('admin/structure/block'))),
+    '#required' => TRUE,
+  );
+
+  $form['calendar_id'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Calendar ID'),
+    '#description' => t('Each Google Calendar Block block requires a username and unique private visibility feed + magic cookie combination in order to function.'),
+    '#collapsible' => FALSE,
+    '#collapsed' => FALSE,
+  );
+  $markup = '';
+  $markup .= '<p>' . t('The required identification information can be found on the settings page for each calendar. To retrieve the information:') . '</p>';
+  $markup .= '<ul>';
+  $markup .= '<li>' . t('Visit <a href="@google_calendar">Google Calendar</a>, log in and browse to the settings page (select the gear icon and choose <strong>Settings</strong>).', array('@google_calendar' => 'https://www.google.com/calendar')) . '</li>';
+  $markup .= '<li>' . t('From the settings page, select the <strong>Calendars</strong> tab and then select the calendar that you wish to display in the Google Calendar Block block.') . '</li>';
+  $markup .= '<li>' . t('Look for the <strong>Private Address</strong> label and select the <strong>XML</strong> icon. A modal window will appear with the private address of the Calendar.') . '</li>';
+  $markup .= '<li>' . t('The private address is in the form of https://www.google.com/calendar/feeds/example@gmail.com/private-123a45678bcd12345e678f12g345hij6/basic where <em>example@gmail.com</em> is the <strong>user</strong> and <em>private-123a45678bcd12345e678f12g345hij6</em> is the <strong>visibility</strong>.").') . '</li>';
+  $markup .= '</ul>';
+  $markup .= '<p>' . t('By default, primary calendars are not shared outside of the domain for Google Apps users. In order to display the primary calendar of a Google Apps account, you must set %setting to %value or higher. Note that changing this option may take up to 24 hours to propagate to all users.', array('%setting' => 'External Sharing options for primary calendars', '%value' => 'Share all information, but outsiders cannot change calendars')) . '</p>';
+  $form['calendar_id']['calendar_id_retrieval_instructions'] = array(
+    '#markup' => $markup,
+  );
+  $form['calendar_id']['calendar_user'] = array(
+    '#type' => 'textfield',
+    '#title' => t('User'),
+    '#default_value' => $edit['calendar_user'],
+    '#required' => TRUE,
+    '#description' => t('The username (in e-mail address form) of the calendar.'),
+  );
+  $form['calendar_id']['calendar_visibility'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Visibility'),
+    '#default_value' => $edit['calendar_visibility'],
+    '#required' => TRUE,
+    '#description' => t('The private visibility feed and magic cookie value of the calendar.'),
+  );
+
+  $form['calendar_order_by'] = array(
+    '#type' => 'select',
+    '#title' => t('Order by'),
+    '#options' => array(
+      '' => t('Default (unspecified, stable order)'),
+      'starttime' => t('Start time'),
+      'updated' => t('Updated'),
+    ),
+    '#default_value' => $edit['calendar_order_by'],
+    '#description' => t('The order in which the events are presented.'),
+  );
+  $form['calendar_sort_order'] = array(
+    '#type' => 'select',
+    '#title' => t('Sort order'),
+    '#options' => array(
+      '' => t('Default (unsorted)'),
+      'ascending' => t('Ascending'),
+      'descending' => t('Descending'),
+    ),
+    '#default_value' => $edit['calendar_sort_order'],
+    '#description' => t('Whether the events are listed in ascending or descending order.'),
+  );
+  $form['calendar_future_events'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Display future events'),
+    '#default_value' => $edit['calendar_future_events'],
+  );
+  $form['calendar_max_results'] = array(
+    '#type' => 'select',
+    '#title' => t('Maximum number of events'),
+    '#options' => array('' => t('Auto')) + drupal_map_assoc(range(1, 20)),
+    '#default_value' => $edit['calendar_max_results'],
+    '#description' => t('Maximum number of events to display.'),
+  );
+  $form['calendar_limit_date_range'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Limit events to a specific date range'),
+    '#default_value' => $edit['calendar_limit_date_range'],
+    '#description' => t(''),
+  );
+  $form['calendar_start'] = array(
+    '#type' => 'container',
+    '#states' => array(
+      'visible' => array(
+        ':input[name="calendar_limit_date_range"]' => array('checked' => TRUE),
+      ),
+    ),
+  );
+  $form['calendar_start']['calendar_start_min'] = array(
+    '#type' => 'date',
+    '#title' => t('Minimum start time'),
+    '#default_value' => $edit['calendar_start_min'],
+    '#description' => t('Lower bound (inclusive) for the possible starting time of an event.'),
+  );
+  $form['calendar_start']['calendar_start_max'] = array(
+    '#type' => 'date',
+    '#title' => t('Maximum start time'),
+    '#default_value' => $edit['calendar_start_max'],
+    '#description' => t('Upper bound (exclusive) for the possible starting time of an event.'),
+  );
+
+  return $form;
+}
+
+/**
+ * Implements hook_block_save().
+ */
+function google_calendar_block_block_save($delta = 0, $edit = array()) {
+  google_calendar_block_custom_block_save($edit, $delta);
+}
+
+/**
+ * Saves a user-created Google Calendar block in the database.
+ *
+ * @param $edit
+ *   Associative array of fields to save. Array keys:
+ *   - info: Block description.
+ *   - calendar_user: The username (in e-mail address form) of the calendar.
+ *   - calendar_visibility: The private visibility feed along with the magic cookie value.
+ *   - calendar_order_by: The order of the calendar events.
+ *   - calendar_sort_order: How the order of the calendar events is sorted.
+ *   - calendar_future_events: Whether the calendar displays future events.
+ *   - calendar_max_results: How many events are displayed.
+ *   - calendar_limit_date_range: Determines whether or not calendar events should be limited to a certain date range.
+ *   - calendar_start_min: Determines the earliest event to list. Inclusive.
+ *   - calendar_start_max: Determines the latest event to list. Exclusive.
+ *   Block ID of the block to save.
+ *
+ * @return
+ *   Always returns TRUE.
+ */
+function google_calendar_block_custom_block_save($edit, $delta) {
+  // The serialized 'data' column contains the calendar settings.
+  $data = array(
+    'calendar_order_by' => $edit['calendar_order_by'],
+    'calendar_sort_order' => $edit['calendar_sort_order'],
+    'calendar_future_events' => $edit['calendar_future_events'],
+    'calendar_max_results' => $edit['calendar_max_results'],
+    'calendar_limit_date_range' => $edit['calendar_limit_date_range'],
+    'calendar_start_min' => array(
+      'year' => $edit['calendar_start_min']['year'],
+      'month' => $edit['calendar_start_min']['month'],
+      'day' => $edit['calendar_start_min']['day'],
+    ),
+    'calendar_start_max' => array(
+      'year' => $edit['calendar_start_max']['year'],
+      'month' => $edit['calendar_start_max']['month'],
+      'day' => $edit['calendar_start_max']['day'],
+    ),
+  );
+
+  // Save the block configuration.
+  $delta = db_update('google_calendar_block')
+    ->fields(array(
+      'info' => $edit['info'],
+      'calendar_user' => $edit['calendar_user'],
+      'calendar_visibility' => $edit['calendar_visibility'],
+      'data' => serialize($data),
+    ))
+    ->condition('bid', $delta)
+    ->execute();
+
+  return TRUE;
+}
+
+/**
+ * Implements hook_block_view().
+ */
+function google_calendar_block_block_view($delta) {
+  // Load the configuration.
+  $config = google_calendar_block_block_get($delta);
+
+  // Unserialize the calendar properties.
+  $data = unserialize($config['data']);
+
+  // Prepare the basic block data.
+  $block = array();
+  $block['subject'] = check_plain($config['info']);
+
+  // Statically cache the calendar data to improve performance.
+  $calendars = &drupal_static(__FUNCTION__);
+
+  // Calendar data is cached per block.
+  $cid = 'google_calendar_block:' . $delta;
+
+  // Load the calendar data if it's not found in the static cache.
+  if (!isset($calendars[$cid])) {
+    if (($library = libraries_detect('zf1')) && !empty($library['installed'])) {
+      // Add the ZF1 library directory to the list of locations where PHP
+      // looks for files in order to allow its loader to function properly.
+      set_include_path(get_include_path() . PATH_SEPARATOR . realpath($library['library path'] . '/library'));
+
+      // Load the ZF1 loader and use it to load Zend_Gdata classes.
+      if (($library = libraries_load('zf1')) && !empty($library['loaded'])) {
+        // Load the required Zend_Gdata classes.
+        // The Zend_Gdata classes must be loaded before attempting to retrieve
+        // the calendar data from the cache in order for PHP to understand how
+        // to unserialize the serialized data back into an object.
+        Zend_Loader::loadClass('Zend_Gdata');
+        Zend_Loader::loadClass('Zend_Gdata_Calendar');
+
+        // Load the calendar data if it's not found in the persistent cache.
+        if ($cache = cache_get($cid, 'cache_google_calendar_block')) {
+          $calendars[$cid] = $cache->data;
+        }
+        else {
+          $service = new Zend_Gdata_Calendar();
+
+          $query = $service->newEventQuery();
+          $query->setUser($config['calendar_user']);
+          $query->setVisibility($config['calendar_visibility']);
+
+          $query->setProjection('full');
+          $query->setSingleEvents(TRUE);
+
+          if (!empty($data['calendar_order_by'])) {
+            $query->setOrderby($data['calendar_order_by']);
+          }
+          if (!empty($data['calendar_sort_order'])) {
+            $query->setSortOrder($data['calendar_sort_order']);
+          }
+
+          if (!empty($data['calendar_future_events'])) {
+            $query->setFutureevents((bool) $data['calendar_future_events']);
+          }
+
+          if (!empty($data['calendar_max_results'])) {
+            $query->setMaxResults($data['calendar_max_results']);
+          }
+
+          if (!empty($data['calendar_limit_date_range'])) {
+            $min = $data['calendar_start_min'];
+            $date = "{$min['year']}-{$min['month']}-{$min['day']}";
+            $query->setStartMin($date);
+
+            $max = $data['calendar_start_max'];
+            $date = "{$max['year']}-{$max['month']}-{$max['day']}";
+            $query->setStartMax($date);
+          }
+
+          // Retrieve the calendar event feed.
+          try {
+            $calendars[$cid] = $service->getCalendarEventFeed($query);
+            cache_set($cid, $calendars[$cid], 'cache_google_calendar_block', CACHE_TEMPORARY);
+          }
+          catch (Zend_Gdata_App_Exception $e) {
+            watchdog('google_calendar_block', $e->getMessage(), array(), WATCHDOG_ERROR);
+          }
+        }
+      }
+    }
+  }
+
+  $items = array();
+
+  if (!empty($calendars[$cid])) {
+    foreach ($calendars[$cid] as $event_feed) {
+      $variables = array(
+        'title' => $event_feed->title->getText(),
+        'author' => $event_feed->author[0]->name->getText(),
+        'summary' => $event_feed->summary,
+        'content' => $event_feed->content->getText(),
+        'start' => _google_calendar_block_google_date_to_timestamp($event_feed->when[0]->startTime),
+        'end' => _google_calendar_block_google_date_to_timestamp($event_feed->when[0]->endTime),
+        'where' => $event_feed->where[0]->getValueString(),
+      );
+
+      $items[] = theme('google_calendar_block_event', $variables);
+    }
+  }
+
+  $block['content'] = array(
+    '#theme' => 'item_list',
+    '#items' => $items,
+    '#type' => 'ul',
+  );
+
+  return $block;
+}
+
+/**
+ * Helper function to convert a Google date into a Unix timestamp
+ *
+ * @param $date
+ *   A Google date in the form of 2010-06-11T07:30:00.000-07:00.
+ *
+ * @return
+ *   The date as a Unix timestamp.
+ */
+function _google_calendar_block_google_date_to_timestamp($date) {
+  $parts = explode('T', $date);
+
+  $date = $parts[0];
+
+  if (!empty($parts[1])) {
+    $time = $parts[1];
+    $date = $date . ' ' . $time;
+  }
+
+  return strtotime($date);
+}
+
+/**
+ * Implements template_preprocess_hook().
+ */
+function template_preprocess_google_calendar_block_event(&$variables) {
+  $variables['start'] = format_date($variables['start']);
+  $variables['end'] = format_date($variables['end']);
+}

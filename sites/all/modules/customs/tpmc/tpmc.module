@@ -1,0 +1,79 @@
+<?php
+
+/*
+function tpmc_init() {
+		global $user;
+		if (user_is_anonymous()) {
+			$ip = $_SERVER['REMOTE_ADDR'];
+			$data = file_get_contents("http://www.telize.com/geoip/$ip");
+		 	$data = json_decode($data);
+			$message = sprintf("Un utilisateur s'est connecte le %s a %s sur la page %s de votre site et porte l'adresse ip %s a partir de la ville : %s de code postal %s, de latitude : %s et de longitude : %s",
+       date('d/M/Y'), date('G:i'), basename($_SERVER['PHP_SELF']), $_SERVER['REMOTE_ADDR'], $data->city, $data->postal_code, $data->latitude, $data->longitude);
+				$params['body'] = $message;
+				drupal_mail('tpmc', 'notice', 'toutpourmonchien@outlook.fr', 'fr', $params);
+				//mail('toutpourmonchien@outlook.fr', "Quelqu'un s'est connecté", $message);
+				}
+}
+*/
+		
+ function tpmc_mail($key, &$message, $params) {
+    switch($key) {
+      case 'notice':
+				$message['subject'] = 'Un utilisateur est connecté';
+				$message['body'][] = $params['body'];
+				break;
+		}
+ }
+
+function tpmc_preprocess_page(&$vars) {
+		if (drupal_is_front_page()) {
+				
+		}
+    //krumo($vars);
+    tpmc_random_color();
+    $view = views_get_page_view();
+    if (!empty($view)) {
+        switch ($view->name) {
+            case 'nos_videos':
+                $queries = drupal_get_query_parameters();
+                if (!empty($queries['field_video_categorie_tid']) && is_numeric($queries['field_video_categorie_tid'])) {
+                    $term = taxonomy_term_load($queries['field_video_categorie_tid']);
+                    $title = drupal_get_title();
+                    $real_title = t('@title - !categorie', array('@title' => $title, '!categorie' => $term->name));
+                    drupal_set_title($real_title);
+                }
+
+        }
+    }
+}
+
+function tpmc_views_post_render(&$view, &$output, &$cache) {
+	switch ($view->name) {
+			case 'nos_videos':
+				drupal_add_js(drupal_get_path('module', 'tpmc').'/tpmc.js');
+				break;
+	}
+}
+
+function tpmc_random_color() {
+    $colors = array(
+        'rgba(209, 238, 238, 0.5);',
+        'rgba(210, 237, 205, 0.5);',
+        'rgba(234, 242, 205, 0.5);',
+        'rgba(212, 243, 250, 0.5);',
+    );
+    $num = array_rand($colors, 1);
+    drupal_add_css('.main-container #content-top { background-color:'.$colors[$num].'}', 'inline');
+}
+
+function tpmc_form_alter(&$form, &$form_state, $form_id) {
+		//krumo($form);
+		switch ($form_id) {
+				case 'simplenews_block_form_13':
+					if (isset($form['realname'])) {
+							$form['realname']['#title'] = t('Prénom');
+					}
+					//$form['mail']['#title'] = '<i class="fa fa-envelope-o fa-3x"></i> Email';
+				break;
+		}
+}

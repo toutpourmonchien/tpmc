@@ -1,0 +1,92 @@
+<?php
+
+function avent_menu() {
+  $items['calendrier-de-lavent-toutpourmonchien'] = array(
+    'title' => t('Le calendrier de l\'Avent ToutPourMonChien'),
+    'page callback' => 'avent_page',
+    'access arguments' => array('access content'),
+  );
+  
+  return $items;
+} 
+
+function avent_get_all() {
+  $i = 1;
+  $now = new DateTime();
+  $day = $now->format('d');
+  $month = $now->format('m');
+  $all = array();
+  while ($i <= 25) {
+    $class = 'box case';
+    $node = avent_get_avent_webform($i);
+    //krumo($node);
+    if ($i < $day) {
+      $class .= ' opened';
+      $past = url(drupal_get_path('module', 'avent').'/past/case_past_'.$i.'.jpg', array('absolute' => true));
+    }
+    else if ($i == $day) {
+      $class .= ' today';
+    }
+    else {
+      $class .= ' forbid';
+    }
+    $all[$i]['class'] = $class;
+    $all[$i]['past'] = $past;
+    if (isset($node) && ($day == $i)) {
+      $all[$i]['link'] = drupal_get_path_alias('node/'.$node->nid);
+    }
+    $i++;
+    unset($class);
+    unset($node);
+    unset($past);
+  } 
+  return $all;
+} 
+
+
+function avent_page() {
+  
+  $vars = array();
+  return theme('avent', $vars);
+}
+
+function avent_get_avent_webform($day) {
+  $query = new EntityFieldQuery();
+
+  $query->entityCondition('entity_type', 'node')
+  ->entityCondition('bundle', 'avent')
+  ->propertyCondition('status', NODE_PUBLISHED)
+  ->fieldCondition('field_avent_jour', 'value', $day);
+  
+  $result = $query->execute();
+
+  if (isset($result['node'])) {
+    $news_items_nids = array_keys($result['node']);
+    $news_items = entity_load('node', $news_items_nids);
+  }
+  
+  return end($news_items);
+}
+
+function avent_theme($existing, $type, $theme, $path){
+  return array(
+    'avent' => array(
+        'variables' => array('all' => NULL),
+        'template'  => 'avent', 
+    )
+  );
+}
+
+function avent_preprocess_avent(&$vars) {
+  $vars['all'] = avent_get_all();
+  $now = new DateTime();
+  $month = $now->format('m');
+  $actif = false;
+  if ($month == 12) {
+    $actif = true;
+  }
+  $vars['actif'] = $actif;
+  drupal_add_css(drupal_get_path('module', 'avent').'/avent.less');
+}
+
+

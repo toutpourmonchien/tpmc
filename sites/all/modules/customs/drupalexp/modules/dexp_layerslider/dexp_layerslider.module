@@ -1,0 +1,597 @@
+<?php
+
+/* Implement hook_menu */
+
+function dexp_layerslider_menu() {
+  $items = array();
+  $items['admin/dexp_layerslider'] = array(
+      'title' => 'Layer Slider',
+      'page callback' => 'dexp_layerslider_list',
+      'access arguments' => array('administer'),
+      'type' => MENU_NORMAL_ITEM
+  );
+  $items['admin/dexp_layerslider/add'] = array(
+      'title' => 'Add Slide',
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('dexp_layerslider_form'),
+      'access arguments' => array('administer'),
+      'type' => MENU_LOCAL_ACTION,
+      'file' => 'edit.dexp_layerslider.php'
+  );
+  $items['admin/dexp_layerslider/%/edit'] = array(
+      'title' => 'Edit Slide',
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('dexp_layerslider_form',2),
+      'access arguments' => array('administer'),
+      'type' => MENU_CALLBACK,
+      'file' => 'edit.dexp_layerslider.php'
+  );
+  $items['admin/dexp_layerslider/%/editslides'] = array(
+      'title' => 'Edit Slide',
+      'page callback' => 'dexp_layerslider_edit_sliders',
+      'page arguments' => array(2),
+      'access arguments' => array('administer'),
+      'type' => MENU_LOCAL_ACTION,
+      'context' => MENU_CONTEXT_INLINE
+  );
+  $items['admin/dexp_layerslider/%/delete'] = array(
+      'title' => 'Edit Slide',
+      'page callback' => 'dexp_layerslider_delete',
+      'page arguments' => array(2),
+      'access arguments' => array('administer'),
+      'type' => MENU_CALLBACK,
+  );
+  $items['admin/dexp_layerslider/%/export'] = array(
+      'title' => 'Export Slide',
+      'page callback' => 'dexp_layerslider_export',
+      'page arguments' => array(2),
+      'access arguments' => array('administer'),
+      'type' => MENU_LOCAL_ACTION,
+      'context' => MENU_CONTEXT_INLINE
+  );
+  $items['admin/dexp_layerslider/import'] = array(
+      'title' => 'Import Slide',
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('dexp_layerslider_import_form'),
+      'access arguments' => array('administer'),
+      'type' => MENU_LOCAL_ACTION
+  );
+  $items['admin/dexp_layerslider/save'] = array(
+      'title' => 'Edit Slider',
+      'page callback' => 'dexp_layerslider_save',
+      'access arguments' => array('administer'),
+      'type' => MENU_CALLBACK
+  );
+  $items['admin/dexp_layerslider/preview'] = array(
+      'title' => 'Slider Preview',
+      'page callback' => 'dexp_layerslider_preview',
+      'access arguments' => array('administer'),
+      'type' => MENU_CALLBACK
+  );
+  $items['admin/dexp_layerslider/settings'] = array(
+      'title' => 'Settings',
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('dexp_layerslider_settings_form'),
+      'access arguments' => array('administer'),
+      'type' => MENU_NORMAL_ITEM
+  );
+
+  // To use local task menu items, there must be a parent page.
+  $items['contextual'] = array(
+      'title' => 'The contextual example page',
+      'page callback' => 'contextual_example_page',
+      'page arguments' => array(
+          1
+      ),
+      'access callback' => TRUE
+  );
+
+  return $items;
+}
+
+function dexp_layerslider_settings_form() {
+  $form['dexp_layerslider_block_num'] = array(
+      '#type' => 'textfield',
+      '#title' => 'Number of blocks',
+      '#default_value' => variable_get('dexp_layerslider_block_num', 3)
+  );
+  return system_settings_form($form);
+}
+
+/**
+ * Implements hook_block_info().
+ */
+function dexp_layerslider_block_info() {
+  $blocks = array();
+  $num = variable_get('dexp_layerslider_block_num', 3);
+  for ($i = 1; $i <= $num; $i++) {
+    $blocks['dexp_layerslider_block_' . $i] = array(
+        'info' => t('Layer Slider block ' . $i),
+        'cache' => DRUPAL_NO_CACHE
+    );
+  }
+  return $blocks;
+}
+
+/**
+ * Implements hook_block_configure().
+ */
+function dexp_layerslider_block_configure($delta = '') {
+  $form = array();
+
+  if (str_replace('dexp_layerslider_block_', '', $delta) != $delta) {
+    $results = $result = db_select('{dexp_layerslider}', 'd')->fields('d', array(
+                'id',
+                'name'
+            ))->execute();
+    $options = array();
+    foreach ($results as $row) {
+      $options[$row->id] = $row->name;
+    }
+    $num = str_replace('dexp_layerslider_block_', '', $delta);
+    $form['slide'] = array(
+        '#type' => 'select',
+        '#title' => t('Slideshow'),
+        '#options' => $options,
+        '#default_value' => variable_get('dexp_layerslider_block_slide_' . $num),
+        '#description' => t('Select slideshow.')
+    );
+  }
+  return $form;
+}
+
+/**
+ * Implements hook_block_save().
+ */
+function dexp_layerslider_block_save($delta = '', $edit = array()) {
+  if (str_replace('dexp_layerslider_block_', '', $delta) != $delta) {
+    $num = str_replace('dexp_layerslider_block_', '', $delta);
+    variable_set('dexp_layerslider_block_slide_' . $num, $edit['slide']);
+  }
+}
+
+function dexp_layerslider_block_view_alter(&$data, $block) {
+  if (str_replace('dexp_layerslider_block_', '', $block->delta) != $block->delta) {
+    $num = str_replace('dexp_layerslider_block_', '', $block->delta);
+    $sid = variable_get('dexp_layerslider_block_slide_' . $num);
+    $contextual_links = array('admin/dexp_layerslider', array($sid));
+    $data['content']['#contextual_links']['dexp_layerslider_edit'] = $contextual_links;
+  }
+}
+
+function dexp_layerslider_block_view($delta = '') {
+  $block = array();
+  if (str_replace('dexp_layerslider_block_', '', $delta) != $delta) {
+    $num = str_replace('dexp_layerslider_block_', '', $delta);
+    $slide = variable_get('dexp_layerslider_block_slide_' . $num);
+    $block['content'] = menu_tree($delta);
+    $block['content']['#markup'] = dexp_layerslider_block_content($slide);
+    $block['content']['#contextual_links']['menu'] = array('admin/structure/menu/manage', array($delta));
+  }
+  return $block;
+}
+
+function dexp_layerslider_block_content($slideid) {
+  $slide = db_select('{dexp_layerslider}', 'd')->fields('d')->condition('id', $slideid, '=')->execute()->fetchAssoc();
+  if(!$slide) return 'No slider selected';
+  $slides = json_decode(base64_decode($slide['data']));
+  $settings = json_decode(base64_decode($slide['settings']));
+  $module_path = drupal_get_path('module', 'dexp_layerslider');
+  drupal_add_js($module_path.'/plugins/rs-plugin/js/jquery.themepunch.plugins.min.js');
+  drupal_add_js($module_path.'/plugins/rs-plugin/js/jquery.themepunch.revolution.min.js');
+  drupal_add_css($module_path.'/plugins/rs-plugin/css/settings.css');
+  drupal_add_css($module_path.'/css/layerslider.css');
+	for($i = 0; $i< count($slides); $i++){
+		if(!empty($slides[$i]->background_image_uri)){
+			$slides[$i]->background_image = file_create_url($slides[$i]->background_image_uri);
+		}
+		for($j = 0; $j < count($slides[$i]->layers); $j++){
+			if($slides[$i]->layers[$j]->type == 'image' && !empty($slides[$i]->layers[$j]->image_uri)){
+				$slides[$i]->layers[$j]->image =  file_create_url($slides[$i]->layers[$j]->image_uri);
+			}
+		}
+	}
+  return theme('dexp_layerslider_slides', array(
+              'id' => $slideid,
+              'slides' => $slides,
+              'settings' => $settings
+          ));
+}
+
+function dexp_layerslider_list() {
+  $header = array( 'ID', 'Name', 'Action');
+  $results = db_select('{dexp_layerslider}', 'd')
+          ->fields('d', array('id', 'name'))
+          ->execute();
+  $rows = array();
+  foreach ($results as $row) {
+    $row->name = l($row->name, 'admin/dexp_layerslider/' . $row->id . '/edit');
+    $tmp = (array) $row;
+    $tmp[] = l('Edit slides', 'admin/dexp_layerslider/' . $row->id . '/editslides') . ', ' . l('Export', 'admin/dexp_layerslider/' . $row->id.'/export') . ', ' . l('Delete', 'admin/dexp_layerslider/' . $row->id . '/delete');
+    $rows[] = $tmp;
+  }
+  return theme_table(array(
+              'header' => $header,
+              'rows' => $rows,
+              'attributes' => array(),
+              'caption' => '',
+              'colgroups' => array(),
+              'sticky' => false,
+              'empty' => t('No slider created yet.')
+          ));
+}
+
+function dexp_layerslider_edit_sliders($id) {
+  require_once 'defined.php'; 
+	include_once drupal_get_path('module', 'media') . '/wysiwyg_plugins/media.inc';
+  media_include_browser_js();
+  $capltionclasses_str = implode(' ', $captionclasses);
+  drupal_add_js('var $captionclasses = \''.$capltionclasses_str.'\';','inline');
+  $module_path = drupal_get_path('module', 'dexp_layerslider');
+  drupal_add_library('system', 'ui.draggable');
+	drupal_add_library('system', 'ui.dropable');
+	drupal_add_library('system', 'ui.sortable');
+	drupal_add_library('system', 'ui.dialog');
+	drupal_add_library('system', 'ui.tabs');
+  drupal_add_css($module_path.'/plugins/font-awesome/css/font-awesome.min.css');
+  drupal_add_css($module_path . '/css/admin.style.css');
+  drupal_add_js($module_path . '/js/dexp.layerslider.js');
+  drupal_add_js($module_path.'/plugins/rs-plugin/js/jquery.themepunch.plugins.min.js');
+  drupal_add_js($module_path.'/plugins/rs-plugin/js/jquery.themepunch.revolution.min.js');
+  drupal_add_css($module_path.'/plugins/rs-plugin/css/settings.css');
+  $slide = db_select('{dexp_layerslider}', 'd')->fields('d')->condition('id', $id, '=')->execute()->fetchAssoc();
+  $settings = empty($slide['settings']) ? '{}' : base64_decode($slide['settings']);
+  $data = empty($slide['data']) ? 'new Array()' : base64_decode($slide['data']);
+  $destination = isset($_GET['destination'])?$_GET['destination']:'admin/dexp_layerslider';
+  $destination = url($destination);
+  $js = 'var destination = "'.$destination.'";var $settings=' . $settings . ';var $slides = ' . $data . '; var $layers = new Array(); var $currentSlide=0; var $currentLayer=0;';
+  drupal_add_js($js, 'inline');
+  drupal_add_js(drupal_get_path('module', 'dexp_layerslider') . '/js/admin.layerslider.js');
+  ob_start();
+  include 'html/layeroptions.php';
+  $content = ob_get_clean();
+  return $content;
+}
+
+function dexp_layerslider_delete($slideid) {
+  return drupal_get_form('dexp_layerslider_confirm_form');
+}
+
+function dexp_layerslider_confirm_form($form_state) {
+  $form = array();
+  $form['id'] = array(
+    '#type'=>'hidden',
+    '#default_value' => arg(2)
+  );
+  return confirm_form($form, 'Do you really want to detele this slide?', 'admin/dexp_layerslider', NULL, 'Delete', 'Cancel');
+}
+
+function dexp_layerslider_confirm_form_submit($form, &$form_state){
+  $slideid = $form['id']['#value'];
+  db_delete('dexp_layerslider')
+          ->condition('id', $slideid)
+          ->execute();
+  drupal_set_message('The slide has been deleted');
+  drupal_goto('admin/dexp_layerslider');
+}
+
+function dexp_layerslider_save() {
+  header('Content-type: application/json');
+  $sid = $_REQUEST['sid'];
+  $data = $_REQUEST['data'];
+  $settings = $_REQUEST['settings'];
+  db_update('{dexp_layerslider}')->fields(array(
+      'data' => $data,
+      'settings' => $settings
+  ))->condition('id', $sid, '=')->execute();
+  $result = array(
+      'data' => 'saved'
+  );
+  print json_encode($result);
+  exit(0);
+}
+
+function dexp_layerslider_preview() {
+  $sid = 1;
+  $slides = json_decode(base64_decode($_REQUEST['data']));
+  $settings = json_decode(base64_decode($_REQUEST['settings']));
+  print theme('dexp_layerslider_block', array(
+              'sid' => $sid,
+              'slides' => $slides,
+              'settings' => $settings
+          ));
+  exit(0);
+}
+
+function dexp_layerslider_export($id) {
+  require_once 'defined.php';
+  $rand = mt_rand(1000, 9999);
+
+  $slide = db_select('{dexp_layerslider}', 'd')->fields('d')->condition('id', $id, '=')->execute()->fetchAssoc();
+  if (!empty($slide)) {
+    $data = $slide['settings'] . '@@@' . $slide['data'];
+  } else {
+    drupal_set_message('Export failed', 'error');
+    drupal_goto('admin/dexp_layerslider');
+  }
+  $slides = json_decode(base64_decode($slide['data']));
+  $files = array();
+  foreach ($slides as $k => $sl) {
+    if ($sl->background_image) {
+      $files[] = LAYERSLIDER_PUBLIC_PATH_FULL . str_replace(LAYERSLIDER_PUBLIC_PATH, '', $sl->background_image);
+      $slides[$k]->background_image = LAYERSLIDER_PUBLIC_PATH . $rand . basename($sl->background_image);
+    }
+    if ($sl->data_thumb) {
+      $files[] = LAYERSLIDER_PUBLIC_PATH_FULL . str_replace(LAYERSLIDER_PUBLIC_PATH, '', $sl->data_thumb);
+      $slides[$k]->data_thumb = LAYERSLIDER_PUBLIC_PATH . $rand . basename($sl->data_thumb);
+    }
+    foreach ($sl->layers as $v => $layer) {
+      if ($layer->image) {
+        $files[] = LAYERSLIDER_PUBLIC_PATH_FULL . str_replace(LAYERSLIDER_PUBLIC_PATH, '', $layer->image);
+        $slides[$k]->layers[$v]->image = LAYERSLIDER_PUBLIC_PATH . $rand . basename($layer->image);
+      }
+    }
+  }
+  $data = $slide['settings'] . '@@@' . base64_encode(json_encode($slides));
+  $temp_name = drupal_tempnam('temporary://', 'slide.data');
+  $data_file = file_unmanaged_save_data($data, $temp_name, FILE_EXISTS_REPLACE);
+  $wrapper = file_stream_wrapper_get_instance_by_uri($data_file);
+  $realpath = $wrapper->realpath();
+  $files[] = $realpath;
+  $temp_name = drupal_tempnam('temporary://', 'file');
+  $wrapper = file_stream_wrapper_get_instance_by_uri($temp_name);
+  $realpath = $wrapper->realpath();
+  dexp_layerslider_create_zip($files, $realpath, true, $rand);
+
+  header("Content-Type: application/zip");
+  header("Content-Disposition: attachment; filename={$rand}slideexport.zip");
+  header("Content-Length: " . filesize($realpath));
+
+  readfile($realpath);
+  exit;
+
+  $form['result'] = array(
+      '#type' => 'textarea',
+      '#value' => $data
+  );
+  return render($form);
+}
+
+function dexp_layerslider_import_form() {
+  $form['title'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Title')
+  );
+  $form['data'] = array(
+      '#name' => 'data',
+      '#type' => 'managed_file',
+      '#title' => t('Choose a zip file'),
+      '#title_display' => 'invisible',
+      '#upload_location' => 'temporary://',
+      '#upload_validators' => array(
+          'file_validate_extensions' => array(
+              'zip'
+          )
+      )
+  );
+  $form['submit'] = array(
+      '#type' => 'submit',
+      '#value' => 'Import'
+  );
+  return $form;
+}
+
+function dexp_layerslider_import_form_submit(&$form, $form_state) {
+  $fid = $form['data']['fid']['#value'];
+  $file = file_load($fid);
+  $file_uri = $file->uri;
+  $wrapper = file_stream_wrapper_get_instance_by_uri($file_uri);
+  $realpath = $wrapper->realpath();
+  $extractpath = $realpath . 'extract';
+  $zip = new ZipArchive;
+  if ($zip->open($realpath) === TRUE) {
+    $zip->extractTo($extractpath);
+    $zip->close();
+  } else {
+    drupal_set_message('Import failed', 'error');
+    drupal_goto('admin/dexp_layerslider');
+  }
+  if ($handle = opendir($extractpath)) {
+    while (false !== ($entry = readdir($handle))) {
+      if (is_file($extractpath . '/' . $entry)) {
+        if (substr($entry, 0, 10) == 'slide.data') {
+          $siledata = file_get_contents($extractpath . '/' . $entry);
+          $slide = explode('@@@', $siledata);
+          if (!is_array($slide)) {
+            drupal_set_message('Import failed', 'error');
+            drupal_goto('admin/dexp_layerslider');
+          } elseif (base64_decode($slide[0]) == FALSE || base64_decode($slide[1]) == FALSE) {
+            drupal_set_message('Import failed', 'error');
+            drupal_goto('admin/dexp_layerslider');
+          }
+        } else {
+          $filecontent = file_get_contents($extractpath . '/' . $entry);
+          $file=file_unmanaged_save_data($filecontent, 'public://' . $entry, FILE_EXISTS_REPLACE);
+          if($file == FALSE){
+            drupal_set_message('Can not copy file'.$extractpath . '/' . $entry, 'error');
+          }
+        }
+      }
+    }
+  }
+  $title = $form['title']['#value'];
+  db_insert('dexp_layerslider')->fields(array(
+      'name' => $title,
+      'settings' => $slide[0],
+      'data' => $slide[1]
+  ))->execute();
+  drupal_set_message('Import was successful');
+  drupal_goto('admin/dexp_layerslider');
+}
+
+function dexp_layerslider_create_zip($files = array(), $destination = '', $overwrite = false, $prefix = '') {
+  //if the zip file already exists and overwrite is false, return false
+  if (file_exists($destination) && !$overwrite) {
+    return false;
+  }
+  //vars
+  $valid_files = array();
+  //if files were passed in...
+  if (is_array($files)) {
+    //cycle through each file
+    foreach ($files as $file) {
+      //make sure the file exists
+      if (file_exists($file)) {
+        $valid_files[] = $file;
+      }
+    }
+  }
+  //if we have good files...
+  if (count($valid_files)) {
+    //create the archive
+    $zip = new ZipArchive();
+    if ($zip->open($destination, $overwrite ? ZIPARCHIVE::OVERWRITE : ZIPARCHIVE::CREATE) !== true) {
+      return false;
+    }
+    //add the files
+    foreach ($valid_files as $file) {
+      if (strpos(basename($file), 'slide.data') === FALSE) {
+        $zip->addFile($file, $prefix . basename($file));
+      } else {
+        $zip->addFile($file, basename($file));
+      }
+    }
+    //debug
+    //echo 'The zip archive contains ',$zip->numFiles,' files with a status of ',$zip->status;
+    //close the zip -- done!
+    $zip->close();
+
+    //check to make sure the file exists
+    return file_exists($destination);
+  } else {
+    return false;
+  }
+}
+
+/* Implements hook_theme(). */
+
+function dexp_layerslider_theme() {
+	$path = drupal_get_path('module', 'dexp_layerslider');
+  $themes['dexp_layerslider_slides'] = array(
+      'template' => 'slides',
+      'path' => $path . '/theme',
+      'pattern' => 'layerslider__',
+      'preprocess functions' => array(
+          'template_preprocess',
+          'dexp_layerslider_preprocess_slides',
+      ),
+      'variables' => array()
+  );
+	$themes['dexp_layerslider_slide'] = array(
+      'template' => 'slide',
+      'path' => $path . '/theme',
+      'pattern' => 'layerslider__',
+      'preprocess functions' => array(
+          'template_preprocess',
+          'dexp_layerslider_preprocess_slide',
+      ),
+      'variables' => array()
+  );
+	$themes['dexp_layerslider_layer'] = array(
+      'template' => 'layer',
+      'path' => $path . '/theme',
+      'pattern' => 'layerslider__',
+      'preprocess functions' => array(
+          'template_preprocess',
+          'dexp_layerslider_preprocess_layer',
+      ),
+      'variables' => array()
+  );
+	return $themes;
+}
+
+function dexp_layerslider_preprocess_slides(&$vars){
+	$slides = $vars['slides'];
+	$settings = $vars['settings'];
+	$html_id = drupal_html_id('dexp_layerslider');
+	$vars['attributes_array']['id'] = $html_id;
+	$vars['html_id'] = $html_id;
+	$vars['attributes_array']['class'] = 'layerslider-bannercontainer';
+	$vars['attributes_array']['style'] = "max-height: {$settings->startheight}px;";
+	$vars['content'] = '';
+	foreach($slides as $slide){
+		$vars['content'] .= theme('dexp_layerslider_slide',array(
+			'slide' => $slide,
+		));
+	}
+}
+
+function dexp_layerslider_preprocess_slide(&$vars){
+	$slide = $vars['slide'];
+	$layers = $slide->layers;
+	if($slide->slide_link){
+		$vars['attributes_array']['data-link'] = $slide->slide_link;
+	}
+	$vars['attributes_array']['data-transition'] = $slide->data_transition;
+	$vars['attributes_array']['data-masterspeed'] = $slide->data_masterspeed;
+	if($slide->data_transition == 'boxfade'){
+		$vars['attributes_array']['data-slotamount'] = $slide->data_slotamount;
+	}
+	$vars['content'] = "<img src=\"{$slide->background_image}\" alt=\"\"/>";
+	foreach($layers as $layer){
+		$vars['content'] .= theme('dexp_layerslider_layer',array(
+			'layer' => $layer,
+		));
+	}
+}
+
+function dexp_layerslider_preprocess_layer(&$vars){
+	$layer = $vars['layer'];
+	$vars['attributes_array']['class'][] = 'caption';
+	$vars['attributes_array']['class'][] = 'tp-caption';
+	$vars['attributes_array']['class'][] = $layer->incomingclasses;
+	$vars['attributes_array']['class'][] = $layer->outgoingclasses;
+	if($layer->type=='text'){
+		$vars['attributes_array']['class'][] = $layer->text_style;
+	}
+	$vars['attributes_array']['data-x'] = $layer->left;
+	$vars['attributes_array']['data-y'] = $layer->top;
+	$vars['attributes_array']['data-speed'] = $layer->data_speed;
+	$vars['attributes_array']['data-start'] = $layer->data_start;
+	if($layer->data_end){
+		$vars['attributes_array']['data-end'] = $layer->data_end;
+	}
+	$vars['attributes_array']['data-easing'] = $layer->data_easing;
+	$vars['attributes_array']['data-endeasing'] = $layer->data_endeasing;
+	if($layer->custom_css){
+		$vars['attributes_array']['style'] = $layer->custom_css;
+	}
+	if($layer->incomingclasses == 'customin'){
+		$vars['attributes_array']['data-customin'] = $layer->customin;
+	}
+	if($layer->outgoingclasses == 'customout'){
+		$vars['attributes_array']['data-customout'] = $layer->customout;
+	}
+	switch($layer->type){
+		case 'text':
+			if($layer->link){
+				$vars['content'] = l($layer->text,$layer->link,array('html'=>true));
+			}else{
+				$vars['content'] = $layer->text;
+			}
+			break;
+		case 'image':
+			if($layer->link){
+				$vars['content'] = l("<img src=\"{$layer->image}\"/>",$layer->link,array('html'=>true));
+			}else{
+				$vars['content'] = "<img src=\"{$layer->image}\"/>";
+			}
+			break;
+		case 'video':
+			if($layer->video_type == 'vimeo'){
+				$vars['content'] = "<iframe width=\"{$layer->width}\" height=\"{$layer->height}\" frameborder=\"0\" src=\"http://player.vimeo.com/video/{$layer->video}?title=0&amp;byline=0&amp;portrait=0;api=1\"></iframe>";
+			}else{
+				$vars['content'] = "<iframe width=\"{$layer->width}\" height=\"{$layer->height}\" src=\"http://www.youtube.com/embed/{$layer->video}?hd=1&amp;wmode=opaque&amp;controls=1&amp;showinfo=0\" frameborder=\"0\" allowfullscreen></iframe>";
+			}
+	}
+}

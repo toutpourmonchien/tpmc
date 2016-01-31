@@ -1,0 +1,98 @@
+@import 'variables.less';
+header#navbar {
+  background: white;
+  box-shadow: 0px 0px 5px 1px #ddd;
+  #top-bar-wrapper { 
+    padding: 10px 0;
+    background: @bleuencre;
+    width: 100%;
+    color: #EDEDED;
+    a {
+      color: #EDEDED;
+    }
+    #top-bar {
+        width: 1140px;
+        margin: 0 auto;
+        color: #a0a9b1;
+      a {
+        color: #a0a9b1;
+      }
+      ul.info-links {
+        text-align: center;
+      }
+    }
+  }
+  .navbar-header {
+    background: transparent;
+    width: auto;
+    padding: 0;
+    @media (max-width: 480px) {
+       width: 100%;
+       text-align: center;
+      .navbar-toggle {
+        float: none;
+      }
+    }
+    .logo {
+      width: auto;
+      margin: 5px;
+      @media (max-width: 480px) {
+        width: 100%;
+      }
+    }
+  }
+  .navbar-collapse {
+    background: transparent;
+    float: right;
+    ul.navbar-nav {
+      background: transparent;
+      > li.active {
+        a {
+         color: @bleuencre;
+         background: rgba(52, 74, 95, 0.3);
+        }
+        a:hover {
+          color: @bleuencre;
+        }
+        .dropdown-menu {
+            li > a {
+              color: @bleuencre;
+              background: white;
+            }
+          }
+      }
+    }
+  }
+}
+@media (min-width: 480px) and (max-width: 987px) {
+  .navbar-collapse.col-md-9, .navbar-collapse.col-sm-9 {
+    width: 75%;
+  }
+}
+
+@media (max-width: 767px) and (min-width: 480px) {
+  .navbar-collapse.col-md-9, .navbar-collapse.col-sm-9 {
+    width: 75%;
+  }
+  #top-bar-wrapper #top-bar {
+    width: 100%;
+  }
+  header#navbar {
+    .navbar-collapse, .navbar-header {
+      float: none;
+      margin: 0 auto;
+      text-align: center;
+    } 
+    navbar-header {
+      .logo {
+      width: 100%;
+      } 
+    }
+  }
+}
+
+@media (min-width: 980px) {
+  .navbar-collapse.col-md-9, .navbar-collapse.col-sm-9 {
+    width: 80%;
+  }
+}

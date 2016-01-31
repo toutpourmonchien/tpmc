@@ -1,0 +1,15 @@
+.layerslider-bannercontainer {
+  width:100%;
+  position:relative;
+  padding:0;
+	overflow: hidden;
+}
+
+.layerslider-banner{
+  width:100%;
+  position:relative;
+	overflow: hidden;
+}
+.layerslider-banner .tp-caption{
+	opacity:0;
+}
